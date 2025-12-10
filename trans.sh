@@ -7323,6 +7323,29 @@ EOF
     fi
 fi
 
+# 检查是否有内网 IP 配置需要恢复
+for netconf_dir in /dev/netconf/*/; do
+    if [ -f "${netconf_dir}lan_ip" ]; then
+        lan_ip=$(cat "${netconf_dir}lan_ip" 2>/dev/null)
+        lan_mac=$(cat "${netconf_dir}lan_mac" 2>/dev/null)
+        
+        if [ -n "$lan_ip" ] && [ -n "$lan_mac" ]; then
+            # 通过 MAC 找到内网网卡
+            lan_eth=$(ip -o link | grep -i "$lan_mac" | awk -F': ' '{print $2}' | head -1)
+            if [ -n "$lan_eth" ]; then
+                # 检查是否已经配置了该 IP
+                if ! ip addr show dev "$lan_eth" 2>/dev/null | grep -q "${lan_ip%/*}"; then
+                    echo "Configuring LAN interface: $lan_eth with $lan_ip"
+                    ip link set dev "$lan_eth" up 2>/dev/null || true
+                    ip addr add "$lan_ip" dev "$lan_eth" 2>/dev/null || true
+                else
+                    echo "LAN interface $lan_eth already configured with $lan_ip"
+                fi
+            fi
+        fi
+    fi
+done
+
 # 同步时间
 # 1. 可以防止访问 https 出错
 # 2. 可以防止 https://github.com/bin456789/reinstall/issues/223

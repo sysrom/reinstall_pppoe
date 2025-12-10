@@ -11,6 +11,7 @@ ipv4_gateway=$3
 ipv6_addr=$4
 ipv6_gateway=$5
 is_in_china=$6
+custom_dns=$7  # 可选，逗号分隔的 DNS 列表
 
 DHCP_TIMEOUT=15
 DNS_FILE_TIMEOUT=5
@@ -482,13 +483,25 @@ fi
 # 无法上网的网卡通过 flush_ipv4_config 删除了不能上网的 IP 和 dns
 # （原计划是删除无法上网的网卡 dhcp4 获取的 dns，但实际上无法区分）
 # 因此这里直接添加 dns，不判断是否联网
-if ! is_have_ipv4_dns; then
-    echo "nameserver $ipv4_dns1" >>/etc/resolv.conf
-    echo "nameserver $ipv4_dns2" >>/etc/resolv.conf
-fi
-if ! is_have_ipv6_dns; then
-    echo "nameserver $ipv6_dns1" >>/etc/resolv.conf
-    echo "nameserver $ipv6_dns2" >>/etc/resolv.conf
+
+# 优先使用用户自定义的 DNS
+if [ -n "$custom_dns" ]; then
+    echo "Using custom DNS: $custom_dns"
+    # 将逗号分隔的 DNS 转换为多行
+    echo "$custom_dns" | tr ',' '\n' | while read -r dns; do
+        if [ -n "$dns" ]; then
+            echo "nameserver $dns" >>/etc/resolv.conf
+        fi
+    done
+else
+    if ! is_have_ipv4_dns; then
+        echo "nameserver $ipv4_dns1" >>/etc/resolv.conf
+        echo "nameserver $ipv4_dns2" >>/etc/resolv.conf
+    fi
+    if ! is_have_ipv6_dns; then
+        echo "nameserver $ipv6_dns1" >>/etc/resolv.conf
+        echo "nameserver $ipv6_dns2" >>/etc/resolv.conf
+    fi
 fi
 
 # 传参给 trans.start

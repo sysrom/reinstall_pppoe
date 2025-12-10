@@ -3,8 +3,8 @@
 # shellcheck disable=SC2086
 
 set -eE
-confhome=https://raw.githubusercontent.com/sysrom/reinstall_pppoe/main
-confhome_cn=https://hk.gh-proxy.org/https://raw.githubusercontent.com/sysrom/reinstall_pppoe/main
+confhome=https://raw.githubusercontent.com/bin456789/reinstall/main
+confhome_cn=https://cnb.cool/bin456789/reinstall/-/git/raw/main
 # confhome_cn=https://www.ghproxy.cc/https://raw.githubusercontent.com/bin456789/reinstall/main
 
 # 用于判断 reinstall.sh 和 trans.sh 是否兼容
@@ -93,6 +93,16 @@ Usage: $reinstall_____ anolis      7|8|23
                        [--pppoe-user USERNAME]
                        [--pppoe-pass PASSWORD]
                        [--pppoe-eth  INTERFACE] (default: eth1)
+
+                       For Manual Static IP (bypass auto-detect):
+                       [--static-ip      IP/CIDR]  (e.g. 192.168.1.100/24)
+                       [--static-gateway GATEWAY]  (e.g. 192.168.1.1)
+                       [--static-mac     MAC]      (e.g. aa:bb:cc:dd:ee:ff)
+                       [--static-dns     DNS]      (e.g. 8.8.8.8,1.1.1.1)
+
+                       For Extra LAN Interface (use with PPPoE):
+                       [--lan-ip   IP/CIDR]  (e.g. 172.16.71.153/24)
+                       [--lan-mac  MAC]      (e.g. 00:15:5d:82:c6:5a)
 
                        For Windows Only:
                        [--allow-ping]
@@ -235,6 +245,10 @@ is_use_dd() {
 
 is_use_pppoe() {
     [ -n "$pppoe_user" ] && [ -n "$pppoe_pass" ]
+}
+
+is_use_static_ip() {
+    [ -n "$static_ip" ] && [ -n "$static_gateway" ] && [ -n "$static_mac" ]
 }
 
 is_boot_in_separate_partition() {
@@ -1179,7 +1193,7 @@ setos() {
 
         # 不要用https 因为甲骨文云arm initramfs阶段不会从硬件同步时钟，导致访问https出错
         if is_in_china; then
-            mirror=http://mirrors.ustc.edu.cn/alpine/v$releasever
+            mirror=http://mirror.nju.edu.cn/alpine/v$releasever
         else
             mirror=http://dl-cdn.alpinelinux.org/alpine/v$releasever
         fi
@@ -1233,8 +1247,8 @@ Continue?
                 # https://github.com/tuna/issues/issues/1999
                 # nju 也没同步
                 udeb_mirror=deb.freexian.com/extended-lts
-                deb_mirror=mirrors.ustc.edu.cn/debian-elts
-                initrd_mirror=mirrors.ustc.edu.cn/debian-archive/debian
+                deb_mirror=mirror.nju.edu.cn/debian-elts
+                initrd_mirror=mirror.nju.edu.cn/debian-archive/debian
             else
                 # 按道理不应该用官方源，但找不到其他源
                 udeb_mirror=deb.freexian.com/extended-lts
@@ -1245,7 +1259,7 @@ Continue?
             if is_in_china; then
                 # ftp.cn.debian.org 不在国内还严重丢包
                 # https://www.itdog.cn/ping/ftp.cn.debian.org
-                mirror=mirrors.ustc.edu.cn/debian
+                mirror=mirror.nju.edu.cn/debian
             else
                 mirror=deb.debian.org/debian # fastly
             fi
@@ -1256,7 +1270,7 @@ Continue?
 
         # 云镜像和 firmware 下载源
         if is_in_china; then
-            cdimage_mirror=https://mirrors.ustc.edu.cn/debian-cdimage
+            cdimage_mirror=https://mirror.nju.edu.cn/debian-cdimage
         else
             cdimage_mirror=https://cdimage.debian.org/images # 在瑞典，不是 cdn
             # cloud.debian.org 同样在瑞典，不是 cdn
@@ -1302,7 +1316,7 @@ Continue?
         else
             # 传统安装
             if is_in_china; then
-                hostname=mirrors.ustc.edu.cn
+                hostname=mirror.nju.edu.cn
             else
                 # http.kali.org 没有 ipv6 地址
                 # http.kali.org (geoip 重定向) 到 kali.download (cf)
@@ -1340,10 +1354,10 @@ Continue?
                 # 有的源没有 releases 镜像
                 # https://mirrors.tuna.tsinghua.edu.cn/ubuntu-cloud-images/releases/
                 #   https://unicom.mirrors.ustc.edu.cn/ubuntu-cloud-images/releases/
-                #            https://mirrors.ustc.edu.cn/ubuntu-cloud-images/releases/
+                #            https://mirror.nju.edu.cn/ubuntu-cloud-images/releases/
 
                 # mirrors.cloud.tencent.com
-                ci_mirror=https://mirrors.ustc.edu.cn/ubuntu-cloud-images
+                ci_mirror=https://mirror.nju.edu.cn/ubuntu-cloud-images
             else
                 ci_mirror=https://cloud-images.ubuntu.com
             fi
@@ -1378,8 +1392,8 @@ Continue?
             # 传统安装
             if is_in_china; then
                 case "$basearch" in
-                "x86_64") mirror=https://mirrors.ustc.edu.cn/ubuntu-releases/$releasever ;;
-                "aarch64") mirror=https://mirrors.ustc.edu.cn/ubuntu-cdimage/releases/$releasever/release ;;
+                "x86_64") mirror=https://mirror.nju.edu.cn/ubuntu-releases/$releasever ;;
+                "aarch64") mirror=https://mirror.nju.edu.cn/ubuntu-cdimage/releases/$releasever/release ;;
                 esac
             else
                 case "$basearch" in
@@ -1405,13 +1419,13 @@ Continue?
     setos_arch() {
         if [ "$basearch" = "x86_64" ]; then
             if is_in_china; then
-                mirror=https://mirrors.ustc.edu.cn/archlinux
+                mirror=https://mirror.nju.edu.cn/archlinux
             else
                 mirror=https://geo.mirror.pkgbuild.com # geoip
             fi
         else
             if is_in_china; then
-                mirror=https://mirrors.ustc.edu.cn/archlinuxarm
+                mirror=https://mirror.nju.edu.cn/archlinuxarm
             else
                 # https 证书有问题
                 mirror=http://mirror.archlinuxarm.org # geoip
@@ -1434,7 +1448,7 @@ Continue?
 
     setos_nixos() {
         if is_in_china; then
-            mirror=https://mirrors.ustc.edu.cn/nix-channels
+            mirror=https://mirror.nju.edu.cn/nix-channels
         else
             mirror=https://nixos.org/channels
         fi
@@ -1452,7 +1466,7 @@ Continue?
 
     setos_gentoo() {
         if is_in_china; then
-            mirror=https://mirrors.ustc.edu.cn/gentoo
+            mirror=https://mirror.nju.edu.cn/gentoo
         else
             mirror=https://distfiles.gentoo.org # cdn77
         fi
@@ -1489,7 +1503,7 @@ Continue?
         # https://mirrors.tuna.tsinghua.edu.cn/opensuse/ports/aarch64/tumbleweed/appliances/
 
         if is_in_china; then
-            mirror=https://mirrors.ustc.edu.cn/opensuse
+            mirror=https://mirror.nju.edu.cn/opensuse
         else
             mirror=https://downloadcontentcdn.opensuse.org
         fi
@@ -1666,7 +1680,7 @@ Continue with DD?
 
     setos_aosc() {
         if is_in_china; then
-            mirror=https://mirrors.ustc.edu.cn/anthon/aosc-os
+            mirror=https://mirror.nju.edu.cn/anthon/aosc-os
         else
             # 服务器在香港
             mirror=https://releases.aosc.io
@@ -1699,10 +1713,10 @@ Continue with DD?
             # ci
             if is_in_china; then
                 case $distro in
-                centos) ci_mirror="https://mirrors.ustc.edu.cn/centos-cloud/centos" ;;
-                almalinux) ci_mirror="https://mirrors.ustc.edu.cn/almalinux/$releasever/cloud/$elarch/images" ;;
-                rocky) ci_mirror="https://mirrors.ustc.edu.cn/rocky/$releasever/images/$elarch" ;;
-                fedora) ci_mirror="https://mirrors.ustc.edu.cn/fedora/releases/$releasever/Cloud/$elarch/images" ;;
+                centos) ci_mirror="https://mirror.nju.edu.cn/centos-cloud/centos" ;;
+                almalinux) ci_mirror="https://mirror.nju.edu.cn/almalinux/$releasever/cloud/$elarch/images" ;;
+                rocky) ci_mirror="https://mirror.nju.edu.cn/rocky/$releasever/images/$elarch" ;;
+                fedora) ci_mirror="https://mirror.nju.edu.cn/fedora/releases/$releasever/Cloud/$elarch/images" ;;
                 esac
             else
                 case $distro in
@@ -2855,7 +2869,7 @@ install_grub_linux_efi() {
         fedora_ver=$(get_latest_distro_releasever fedora)
 
         if is_in_china; then
-            mirror=https://mirrors.ustc.edu.cn/fedora
+            mirror=https://mirror.nju.edu.cn/fedora
         else
             mirror=https://d2lzkl7pfhq30w.cloudfront.net/pub/fedora/linux
         fi
@@ -2863,7 +2877,7 @@ install_grub_linux_efi() {
         curl -Lo $tmp/$grub_efi $mirror/releases/$fedora_ver/Everything/$basearch/os/EFI/BOOT/$grub_efi
     else
         if is_in_china; then
-            mirror=https://mirrors.ustc.edu.cn/opensuse
+            mirror=https://mirror.nju.edu.cn/opensuse
         else
             mirror=https://downloadcontentcdn.opensuse.org
         fi
@@ -2882,7 +2896,7 @@ download_and_extract_apk() {
     local extract_dir=$3
 
     install_pkg tar xz
-    is_in_china && mirror=http://mirrors.ustc.edu.cn/alpine || mirror=https://dl-cdn.alpinelinux.org/alpine
+    is_in_china && mirror=http://mirror.nju.edu.cn/alpine || mirror=https://dl-cdn.alpinelinux.org/alpine
     package_apk=$(curl -L $mirror/v$alpine_ver/main/$basearch/ | grep -oP "$package-[^-]*-[^-]*\.apk" | sort -u)
     if ! [ "$(wc -l <<<"$package_apk")" -eq 1 ]; then
         error_and_exit "find no/multi apks."
@@ -2900,7 +2914,7 @@ install_grub_win() {
     grub_ver=2.06
     # ftpmirror.gnu.org 是 geoip 重定向，不是 cdn
     # 有可能重定义到一个拉黑了部分 IP 的服务器
-    is_in_china && grub_url=https://mirrors.ustc.edu.cn/gnu/grub/grub-$grub_ver-for-windows.zip ||
+    is_in_china && grub_url=https://mirror.nju.edu.cn/gnu/grub/grub-$grub_ver-for-windows.zip ||
         grub_url=https://mirrors.kernel.org/gnu/grub/grub-$grub_ver-for-windows.zip
     curl -Lo $tmp/grub.zip $grub_url
     # unzip -qo $tmp/grub.zip
@@ -2953,7 +2967,7 @@ install_grub_win() {
         if false; then
             # g2ldr.mbr
             # 部分国内机无法访问 ftp.cn.debian.org
-            is_in_china && host=mirrors.ustc.edu.cn || host=deb.debian.org
+            is_in_china && host=mirror.nju.edu.cn || host=deb.debian.org
             curl -LO http://$host/debian/tools/win32-loader/stable/win32-loader.exe
             7z x win32-loader.exe 'g2ldr.mbr' -o$tmp/win32-loader -r -y -bso0
             find $tmp/win32-loader -name 'g2ldr.mbr' -exec cp {} /cygdrive/$c/ \;
@@ -3578,6 +3592,15 @@ get_ip_conf_cmd() {
         return
     fi
 
+    # 如果手动指定了静态 IP，使用手动配置
+    if is_use_static_ip; then
+        is_in_china && is_in_china=true || is_in_china=false
+        sh=/initrd-network.sh
+        # 静态 IP 配置：MAC, IPv4地址, IPv4网关, IPv6地址(空), IPv6网关(空), 是否中国, 自定义DNS
+        echo "'$sh' '$static_mac' '$static_ip' '$static_gateway' '' '' '$is_in_china' '$static_dns'"
+        return
+    fi
+
     collect_netconf >&2
     is_in_china && is_in_china=true || is_in_china=false
 
@@ -3598,6 +3621,8 @@ mod_initrd_alpine() {
     # hack 0 PPPoE 支持
     if is_use_pppoe; then
         pppoe_eth_final=${pppoe_eth:-eth1}
+        lan_ip_final=${lan_ip:-}
+        lan_mac_final=${lan_mac:-}
         cat > $initrd_dir/pppoe-setup.sh <<PPPOE_EOF
 #!/bin/ash
 # PPPoE 拨号配置脚本
@@ -3607,12 +3632,37 @@ PPPOE_PASS="$pppoe_pass"
 PPPOE_ETH="$pppoe_eth_final"
 PPPOE_TIMEOUT=60
 
+# 内网配置（可选）
+LAN_IP="$lan_ip_final"
+LAN_MAC="$lan_mac_final"
+
 echo "Setting up PPPoE on \$PPPOE_ETH..."
 
 # 开启 lo
 ip link set dev lo up
 
-# 启动网卡
+# 配置内网 IP（如果指定了）
+if [ -n "\$LAN_IP" ] && [ -n "\$LAN_MAC" ]; then
+    echo "Configuring LAN interface..."
+    # 通过 MAC 找到内网网卡
+    LAN_ETH=\$(ip -o link | grep -i "\$LAN_MAC" | awk -F': ' '{print \$2}' | head -1)
+    if [ -n "\$LAN_ETH" ]; then
+        echo "Found LAN interface: \$LAN_ETH (MAC: \$LAN_MAC)"
+        ip link set dev "\$LAN_ETH" up
+        ip addr add "\$LAN_IP" dev "\$LAN_ETH" 2>/dev/null || true
+        echo "LAN IP configured: \$LAN_IP on \$LAN_ETH"
+        
+        # 保存内网配置到 netconf
+        mkdir -p /dev/netconf/\$LAN_ETH
+        echo "\$LAN_IP" > /dev/netconf/\$LAN_ETH/lan_ip
+        echo "\$LAN_MAC" > /dev/netconf/\$LAN_ETH/lan_mac
+        echo "\$LAN_ETH" > /dev/netconf/\$LAN_ETH/ethx
+    else
+        echo "Warning: LAN interface with MAC \$LAN_MAC not found"
+    fi
+fi
+
+# 启动 PPPoE 网卡
 ip link set dev "\$PPPOE_ETH" up
 sleep 2
 
@@ -4019,7 +4069,9 @@ for o in ci installer debug minimal allow-ping force-cn help \
     frpc-conf: frpc-config: frpc-toml: \
     force-boot-mode: \
     force-old-windows-setup: \
-    pppoe-user: pppoe-pass: pppoe-eth:; do
+    pppoe-user: pppoe-pass: pppoe-eth: \
+    static-ip: static-gateway: static-mac: static-dns: \
+    lan-ip: lan-mac:; do
     [ -n "$long_opts" ] && long_opts+=,
     long_opts+=$o
 done
@@ -4270,6 +4322,35 @@ EOF
         ;;
     --pppoe-eth)
         pppoe_eth=$2
+        shift 2
+        ;;
+    --static-ip)
+        # 格式: IP/CIDR，如 192.168.1.100/24
+        static_ip=$2
+        shift 2
+        ;;
+    --static-gateway)
+        static_gateway=$2
+        shift 2
+        ;;
+    --static-mac)
+        # 用于在 initrd 中找到对应的网卡
+        static_mac=$(echo "$2" | to_lower)
+        shift 2
+        ;;
+    --static-dns)
+        # DNS 服务器，多个用逗号分隔
+        static_dns=$2
+        shift 2
+        ;;
+    --lan-ip)
+        # 内网 IP（无网关），配合 PPPoE 使用
+        lan_ip=$2
+        shift 2
+        ;;
+    --lan-mac)
+        # 内网网卡 MAC 地址
+        lan_mac=$(echo "$2" | to_lower)
         shift 2
         ;;
     --)
