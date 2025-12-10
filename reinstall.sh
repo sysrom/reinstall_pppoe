@@ -89,6 +89,11 @@ Usage: $reinstall_____ anolis      7|8|23
                        [--web-port  PORT]
                        [--frpc-toml PATH]
 
+                       For PPPoE Network:
+                       [--pppoe-user USERNAME]
+                       [--pppoe-pass PASSWORD]
+                       [--pppoe-eth  INTERFACE] (default: eth1)
+
                        For Windows Only:
                        [--allow-ping]
                        [--rdp-port   PORT]
@@ -226,6 +231,10 @@ is_force_use_installer() {
 
 is_use_dd() {
     [ "$distro" = dd ]
+}
+
+is_use_pppoe() {
+    [ -n "$pppoe_user" ] && [ -n "$pppoe_pass" ]
 }
 
 is_boot_in_separate_partition() {
@@ -3563,6 +3572,12 @@ EOF
 }
 
 get_ip_conf_cmd() {
+    # 如果使用 PPPoE，跳过常规网络配置
+    if is_use_pppoe; then
+        echo "'/pppoe-setup.sh'"
+        return
+    fi
+
     collect_netconf >&2
     is_in_china && is_in_china=true || is_in_china=false
 
@@ -3580,6 +3595,110 @@ get_ip_conf_cmd() {
 }
 
 mod_initrd_alpine() {
+    # hack 0 PPPoE 支持
+    if is_use_pppoe; then
+        pppoe_eth_final=${pppoe_eth:-eth1}
+        cat > $initrd_dir/pppoe-setup.sh <<PPPOE_EOF
+#!/bin/ash
+# PPPoE 拨号配置脚本
+
+PPPOE_USER="$pppoe_user"
+PPPOE_PASS="$pppoe_pass"
+PPPOE_ETH="$pppoe_eth_final"
+PPPOE_TIMEOUT=60
+
+echo "Setting up PPPoE on \$PPPOE_ETH..."
+
+# 开启 lo
+ip link set dev lo up
+
+# 启动网卡
+ip link set dev "\$PPPOE_ETH" up
+sleep 2
+
+# 创建 pppoe 配置目录
+mkdir -p /etc/ppp/peers
+
+# 创建 pppoe 配置
+cat > /etc/ppp/peers/provider <<EOF
+plugin pppoe.so
+\$PPPOE_ETH
+user "\$PPPOE_USER"
+noauth
+defaultroute
+usepeerdns
+persist
+maxfail 3
+holdoff 5
+lcp-echo-interval 30
+lcp-echo-failure 4
+mtu 1492
+mru 1492
+EOF
+
+# 创建密码文件
+cat > /etc/ppp/pap-secrets <<EOF
+"\$PPPOE_USER" * "\$PPPOE_PASS"
+EOF
+cat > /etc/ppp/chap-secrets <<EOF
+"\$PPPOE_USER" * "\$PPPOE_PASS"
+EOF
+
+chmod 600 /etc/ppp/pap-secrets /etc/ppp/chap-secrets
+
+# 开始拨号
+echo "Starting PPPoE connection..."
+pppd call provider &
+
+# 等待连接建立
+echo "Waiting for PPPoE connection (max \${PPPOE_TIMEOUT}s)..."
+for i in \$(seq \$PPPOE_TIMEOUT); do
+    if ip link show ppp0 2>/dev/null | grep -q "UP"; then
+        if ip -4 addr show ppp0 | grep -q inet; then
+            echo "PPPoE connected successfully!"
+            sleep 5
+            echo "PPP interface:"
+            ip addr show ppp0
+            echo "Routes:"
+            ip route
+            # 添加 DNS
+            if [ -f /etc/ppp/resolv.conf ]; then
+                cat /etc/ppp/resolv.conf >> /etc/resolv.conf
+            fi
+            if ! grep -q nameserver /etc/resolv.conf; then
+                echo "nameserver 223.5.5.5" >> /etc/resolv.conf
+                echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+            fi
+            echo "DNS:"
+            cat /etc/resolv.conf
+            
+            # 保存 PPPoE 配置到 netconf
+            mkdir -p /dev/netconf/ppp0
+            echo 1 > /dev/netconf/ppp0/is_pppoe
+            echo "\$PPPOE_USER" > /dev/netconf/ppp0/pppoe_user
+            echo "\$PPPOE_PASS" > /dev/netconf/ppp0/pppoe_pass
+            echo "\$PPPOE_ETH" > /dev/netconf/ppp0/pppoe_eth
+            echo 1 > /dev/netconf/ppp0/ipv4_has_internet
+            exit 0
+        fi
+    fi
+    printf "."
+    sleep 1
+done
+
+echo ""
+echo "Error: PPPoE connection timeout"
+exit 1
+PPPOE_EOF
+        chmod a+x $initrd_dir/pppoe-setup.sh
+        
+        # 下载 PPPoE 相关的包到 initrd
+        # ppp 依赖 libpcap
+        download_and_extract_apk "$nextos_releasever" libpcap "$initrd_dir"
+        download_and_extract_apk "$nextos_releasever" ppp "$initrd_dir"
+        download_and_extract_apk "$nextos_releasever" ppp-pppoe "$initrd_dir"
+    fi
+
     # hack 1 v3.19 和之前的 virt 内核需添加 ipv6 模块
     if virt_dir=$(ls -d $initrd_dir/lib/modules/*-virt 2>/dev/null); then
         ipv6_dir=$virt_dir/kernel/net/ipv6
@@ -3899,7 +4018,8 @@ for o in ci installer debug minimal allow-ping force-cn help \
     commit: \
     frpc-conf: frpc-config: frpc-toml: \
     force-boot-mode: \
-    force-old-windows-setup:; do
+    force-old-windows-setup: \
+    pppoe-user: pppoe-pass: pppoe-eth:; do
     [ -n "$long_opts" ] && long_opts+=,
     long_opts+=$o
 done
@@ -4138,6 +4258,18 @@ EOF
         ;;
     --lang)
         lang=$(echo "$2" | to_lower)
+        shift 2
+        ;;
+    --pppoe-user)
+        pppoe_user=$2
+        shift 2
+        ;;
+    --pppoe-pass)
+        pppoe_pass=$2
+        shift 2
+        ;;
+    --pppoe-eth)
+        pppoe_eth=$2
         shift 2
         ;;
     --)

@@ -7250,6 +7250,79 @@ fi
 # 允许 ramdisk 使用所有内存，默认是 50%
 mount / -o remount,size=100%
 
+# 检查是否使用 PPPoE 并重新建立连接
+if [ -f /dev/netconf/ppp0/is_pppoe ]; then
+    info "Re-establishing PPPoE connection..."
+    pppoe_user=$(cat /dev/netconf/ppp0/pppoe_user 2>/dev/null)
+    pppoe_pass=$(cat /dev/netconf/ppp0/pppoe_pass 2>/dev/null)
+    pppoe_eth=$(cat /dev/netconf/ppp0/pppoe_eth 2>/dev/null)
+    
+    if [ -n "$pppoe_user" ] && [ -n "$pppoe_pass" ]; then
+        # 安装 ppp 如果还没安装
+        if ! command -v pppd >/dev/null 2>&1; then
+            apk add ppp ppp-pppoe
+        fi
+        
+        # 检查 ppp0 是否已经连接
+        if ! ip link show ppp0 2>/dev/null | grep -q "UP"; then
+            # 启动网卡
+            ip link set dev "$pppoe_eth" up 2>/dev/null || true
+            sleep 2
+            
+            # 配置 PPPoE
+            mkdir -p /etc/ppp/peers
+            cat > /etc/ppp/peers/provider <<EOF
+plugin pppoe.so
+$pppoe_eth
+user "$pppoe_user"
+noauth
+defaultroute
+usepeerdns
+persist
+maxfail 3
+holdoff 5
+lcp-echo-interval 30
+lcp-echo-failure 4
+mtu 1492
+mru 1492
+EOF
+            cat > /etc/ppp/pap-secrets <<EOF
+"$pppoe_user" * "$pppoe_pass"
+EOF
+            cat > /etc/ppp/chap-secrets <<EOF
+"$pppoe_user" * "$pppoe_pass"
+EOF
+            chmod 600 /etc/ppp/pap-secrets /etc/ppp/chap-secrets
+            
+            # 启动 PPPoE
+            pppd call provider &
+            
+            # 等待连接
+            for i in $(seq 60); do
+                if ip link show ppp0 2>/dev/null | grep -q "UP" && \
+                   ip -4 addr show ppp0 2>/dev/null | grep -q inet; then
+                    echo "PPPoE reconnected successfully!"
+                    sleep 3
+                    # 设置 DNS
+                    if [ -f /etc/ppp/resolv.conf ]; then
+                        cat /etc/ppp/resolv.conf >> /etc/resolv.conf
+                    fi
+                    if ! grep -q nameserver /etc/resolv.conf 2>/dev/null; then
+                        echo "nameserver 223.5.5.5" >> /etc/resolv.conf
+                        echo "nameserver 8.8.8.8" >> /etc/resolv.conf
+                    fi
+                    break
+                fi
+                printf "."
+                sleep 1
+            done
+            echo ""
+        else
+            echo "PPPoE already connected."
+        fi
+    fi
+fi
+
 # 同步时间
 # 1. 可以防止访问 https 出错
 # 2. 可以防止 https://github.com/bin456789/reinstall/issues/223
