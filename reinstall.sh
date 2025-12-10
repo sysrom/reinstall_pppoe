@@ -2894,18 +2894,22 @@ download_and_extract_apk() {
     local alpine_ver=$1
     local package=$2
     local extract_dir=$3
+    local repo=${4:-main}  # 默认 main，可指定 community
 
     install_pkg tar xz
     is_in_china && mirror=http://mirror.nju.edu.cn/alpine || mirror=https://dl-cdn.alpinelinux.org/alpine
-    package_apk=$(curl -L $mirror/v$alpine_ver/main/$basearch/ | grep -oP "$package-[^-]*-[^-]*\.apk" | sort -u)
-    if ! [ "$(wc -l <<<"$package_apk")" -eq 1 ]; then
-        error_and_exit "find no/multi apks."
+    
+    # 精确匹配包名：package-版本号-r修订号.apk
+    package_apk=$(curl -L $mirror/v$alpine_ver/$repo/$basearch/ | grep -oP "${package}-\d[^\"]*\.apk" | sort -u | head -1)
+    if [ -z "$package_apk" ]; then
+        error_and_exit "Package not found: $package in $repo"
     fi
+    echo "Downloading: $package_apk"
     mkdir -p "$extract_dir"
 
     # 屏蔽警告
     tar 2>&1 | grep -q BusyBox && tar_args= || tar_args=--warning=no-unknown-keyword
-    curl -L "$mirror/v$alpine_ver/main/$basearch/$package_apk" | tar xz $tar_args -C "$extract_dir"
+    curl -L "$mirror/v$alpine_ver/$repo/$basearch/$package_apk" | tar xz $tar_args -C "$extract_dir"
 }
 
 install_grub_win() {
@@ -3743,10 +3747,11 @@ PPPOE_EOF
         chmod a+x $initrd_dir/pppoe-setup.sh
         
         # 下载 PPPoE 相关的包到 initrd
-        # ppp 依赖 libpcap
-        download_and_extract_apk "$nextos_releasever" libpcap "$initrd_dir"
-        download_and_extract_apk "$nextos_releasever" ppp "$initrd_dir"
-        download_and_extract_apk "$nextos_releasever" ppp-pppoe "$initrd_dir"
+        # ppp 包含 pppoe 插件 (pppoe.so)
+        # linux-pam 是 ppp 的依赖
+        download_and_extract_apk "$nextos_releasever" linux-pam "$initrd_dir" main
+        download_and_extract_apk "$nextos_releasever" libpcap "$initrd_dir" main
+        download_and_extract_apk "$nextos_releasever" ppp "$initrd_dir" main
     fi
 
     # hack 1 v3.19 和之前的 virt 内核需添加 ipv6 模块
